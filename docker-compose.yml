@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # N8N - Workflow Automation Platform
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: ai_soc_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Beirut
+    volumes:
+      # N8N data persistence
+      - n8n_data:/home/node/.n8n
+      # Mount local directory for CSV file access
+      - ./data:/data
+      # Mount workflows directory
+      - ./workflows:/workflows
+    networks:
+      - ai_soc_network
+
+  # Simple web server for dashboard
+  dashboard:
+    image: nginx:alpine
+    container_name: ai_soc_dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    networks:
+      - ai_soc_network
+
+  # Dashboard API server (Python)
+  dashboard_api:
+    image: python:3.12-slim
+    container_name: ai_soc_dashboard_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    working_dir: /app
+    command: python3 api.py
+    volumes:
+      - ./dashboard:/app
+      - ./data:/data
+    networks:
+      - ai_soc_network
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  ai_soc_network:
+    driver: bridge

@@ -1,0 +1,211 @@
+{
+  "name": "AI Security Council - Main Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        288
+      ],
+      "id": "623a07c7-d7ac-4c6c-8272-9f1410c963c5",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/latest_data.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        768,
+        288
+      ],
+      "id": "2f058583-034c-458c-a18b-793c582d4402",
+      "name": "Send to Dashboard1"
+    },
+    {
+      "parameters": {
+        "operation": "toJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        576,
+        288
+      ],
+      "id": "69215269-2ac9-4aef-85ba-7d467e9c7be0",
+      "name": "Convert to JSON File1"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const allThreats = $input.all();\n\n  console.log(`Aggregating ${allThreats.length} threats for dashboard`);\n\n  const individualThreats = allThreats.map(item => item.json);\n  const totalCount = individualThreats.length;\n\n  // Count verdicts from each agent\n  const agent1Stats = { urgent: 0, investigate: 0, routine: 0 };\n  const agent2Stats = { threat: 0, suspicious: 0, benign: 0 };\n\n  individualThreats.forEach(threat => {\n    const v1 = threat.security_council_verdicts?.agent1_triage?.verdict;\n    const v2 = threat.security_council_verdicts?.agent2_hunter?.verdict;\n\n    if (v1 === 'URGENT') agent1Stats.urgent++;\n    else if (v1 === 'INVESTIGATE') agent1Stats.investigate++;\n    else if (v1 === 'ROUTINE') agent1Stats.routine++;\n\n    if (v2 === 'THREAT') agent2Stats.threat++;\n    else if (v2 === 'SUSPICIOUS') agent2Stats.suspicious++;\n    else if (v2 === 'BENIGN') agent2Stats.benign++;\n  });\n\n  // ✅ GEOGRAPHIC DISTRIBUTION\n  const geoMap = {};\n  individualThreats.forEach(threat => {\n    const country = threat.security_council_verdicts?.agent2_hunter?.threat_intel?.ipinfo?.country;\n    if (country && country !== 'Unknown') {\n      geoMap[country] = (geoMap[country] || 0) + 1;\n    }\n  });\n\n  const topCountries = Object.entries(geoMap)\n    .map(([country, count]) => ({ country, count }))\n    .sort((a, b) => b.count - a.count)\n    .slice(0, 5);\n\n  // ✅ PRIORITY THREATS\n  const priorityThreats = individualThreats\n    .filter(threat => {\n      const oracleVerdict = threat.oracle_strategic_analysis?.verdict;\n      const recommendation = threat.oracle_strategic_analysis?.final_recommendation;\n      return oracleVerdict === 'THREAT' || recommendation === 'ESCALATE_TO_SOC' || recommendation === 'BLOCK';\n    })\n    .slice(0, 5)\n    .map(threat => ({\n      ip: threat.threat?.ip,\n      reason: `${threat.oracle_strategic_analysis?.verdict} - ${threat.oracle_strategic_analysis?.final_recommendation}: ${threat.oracle_strategic_analysis?.geopolitical_context || threat.oracle_strategic_analysis?.geopolitical_notes || ''}`\n    }));\n\n  // ✅ STRATEGIC RECOMMENDATIONS\n  const escalateCount = individualThreats.filter(t => t.oracle_strategic_analysis?.final_recommendation === 'ESCALATE_TO_SOC').length;\n  const blockCount = individualThreats.filter(t => t.oracle_strategic_analysis?.final_recommendation === 'BLOCK').length;\n  const monitorCount = individualThreats.filter(t => t.oracle_strategic_analysis?.final_recommendation === 'MONITOR').length;\n\n  const immediateActions = [];\n  if (blockCount > 0) immediateActions.push(`Block ${blockCount} high-confidence threats immediately`);\n  if (escalateCount > 0) immediateActions.push(`Escalate ${escalateCount} critical threats to SOC for investigation`);\n  if (immediateActions.length === 0) immediateActions.push(`Monitor ${monitorCount} suspicious activities for pattern analysis`);\n\n  const shortTermPriorities = [];\n  if (agent2Stats.suspicious > 3) shortTermPriorities.push(`Monitor ${agent2Stats.suspicious} suspicious IPs for 24-48 hours`);\n  if (topCountries.length > 0) shortTermPriorities.push(`Review firewall rules for traffic from ${topCountries.map(c => c.country).join(', ')}`);\n\n  const longTermStrategy = `Implement enhanced monitoring for ${totalCount} analyzed threats. Multi-AI consensus shows ${agent2Stats.threat} confirmed threats, ${agent2Stats.suspicious} \n  suspicious activities, and ${agent2Stats.benign} benign traffic. Focus on reducing false positive rate through threat intelligence correlation.`;\n\n  // Overall threat level\n  let overallThreatLevel = 'LOW';\n  if (agent2Stats.threat >= 5 || escalateCount >= 3) overallThreatLevel = 'CRITICAL';\n  else if (agent2Stats.threat >= 3 || escalateCount >= 1) overallThreatLevel = 'HIGH';\n  else if (agent2Stats.threat + agent2Stats.suspicious >= 5) overallThreatLevel = 'MEDIUM';\n\n  const dashboardData = {\n    strategic_analysis: {\n      overall_threat_level: overallThreatLevel,\n      campaign_type: 'MULTI_THREAT_ASSESSMENT',\n      threat_actor_profile: `Analysis of ${totalCount} cybersecurity threats with AI consensus`,\n      confidence: 85,\n      executive_summary: `Analyzed ${totalCount} threats. ${agent2Stats.threat} confirmed threats, ${agent2Stats.suspicious} suspicious, ${agent2Stats.benign} benign. Multi-AI consensus \n  analysis with TP/FP classification.`\n    },\n    threat_statistics: {\n      total_count: totalCount,\n      severity_distribution: {\n        critical: agent2Stats.threat,\n        high: agent2Stats.suspicious,\n        medium: agent1Stats.investigate,\n        low: agent2Stats.benign\n      },\n      geographic_distribution: {\n        top_countries: topCountries\n      },\n      agent_consensus: {\n        agent1_triage: agent1Stats,\n        agent2_hunter: agent2Stats\n      }\n    },\n    priority_threats: priorityThreats,\n    recommendations: {\n      immediate_actions: immediateActions,\n      short_term_priorities: shortTermPriorities,\n      long_term_strategy: longTermStrategy\n    },\n    individual_threats: individualThreats\n  };\n\n  console.log('Dashboard data prepared with geo, priority, and recommendations');\n\n  return [{ json: dashboardData }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        288
+      ],
+      "id": "b4b9dd5c-6109-4dad-b3f5-037b28566186",
+      "name": "Aggregate for Dashboard"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QbDjECUcgw8lZF1x",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/QbDjECUcgw8lZF1x",
+          "cachedResultName": "Agent-1"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -304,
+        288
+      ],
+      "id": "b13b4638-ac80-4598-ad2a-88a4d59b7907",
+      "name": "TRIAGE"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hVtqhzgYFV8i7LB5",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hVtqhzgYFV8i7LB5",
+          "cachedResultName": "AAAAAf"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -96,
+        288
+      ],
+      "id": "ec63e379-6efe-491c-9e56-b2af205bd4c1",
+      "name": "HUNTER"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "1yvWkixO0DZG0qBT",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/1yvWkixO0DZG0qBT",
+          "cachedResultName": "Agent0-3"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        144,
+        288
+      ],
+      "id": "c58fbacf-745e-4ac2-9812-0208e73b7cb6",
+      "name": "ORACLE"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "TRIAGE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to JSON File1": {
+      "main": [
+        [
+          {
+            "node": "Send to Dashboard1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate for Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Convert to JSON File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TRIAGE": {
+      "main": [
+        [
+          {
+            "node": "HUNTER",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HUNTER": {
+      "main": [
+        [
+          {
+            "node": "ORACLE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ORACLE": {
+      "main": [
+        [
+          {
+            "node": "Aggregate for Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "dc536b51-115b-4b37-8edb-f168eae33dca",
+  "meta": {
+    "instanceId": "b86198f84e0a58e402d0619da29cdfc8d7ec4f853fe9bf6a59da48d88847bb2e"
+  },
+  "id": "5daRyzzcDolzspiA",
+  "tags": []
+}

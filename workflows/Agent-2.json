@@ -1,0 +1,301 @@
+{
+  "name": "AAAAAf",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -752,
+        -2416
+      ],
+      "id": "0536c4ef-80c3-423e-b71e-77bfdeed2b92",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconsole.log('=== STORED ORIGINAL DATA ===');\nconsole.log('IP:', data.ip);\nconsole.log('Port:', data.port);\nconsole.log('Attack Type:', data.attack_type);\nconsole.log('DeepSeek Verdict:', data.deepseek_verdict);\nconsole.log('Full data:', JSON.stringify(data));\nreturn [{ json: data }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -2416
+      ],
+      "id": "78b374d9-5c9d-4f52-b010-806080bc83e5",
+      "name": "Store Original Data"
+    },
+    {
+      "parameters": {
+        "url": "=https://ipinfo.io/{{ $json.ip }}/json?token=2d752bda798e2c",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -272,
+        -2576
+      ],
+      "id": "6cb0a21f-8132-445d-8846-d1b322f17e68",
+      "name": "IPInfo",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=http://ip-api.com/json/{{ $json.ip }}?fields=status,country,city,isp,org,proxy,hosting",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -272,
+        -2224
+      ],
+      "id": "306acafe-5e10-44c3-95ed-f723df92369a",
+      "name": "IP-API",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get ALL 3 API responses that came in\nconst allItems = $input.all();\n\nconsole.log('=== MERGE ALL DATA ===');\nconsole.log('Received', allItems.length, 'items');\n\n// Get the ORIGINAL data from Store Original Data node\nconst stored = $('Store Original Data').first().json;\n\nconsole.log('STORED IP:', stored.ip);\nconsole.log('STORED PORT:', stored.port);\nconsole.log('STORED VERDICT:', stored.deepseek_verdict);\n\n// Extract API responses from the items\nlet ipinfoData = null;\nlet alienData = null;\nlet ipapiData = null;\n\n// Check each item to see which API it came from\nfor (const item of allItems) {\n  const json = item.json;\n  \n  // IPInfo has 'ip' and 'loc' fields\n  if (json.loc && json.ip) {\n    ipinfoData = json;\n    console.log('Found IPInfo data');\n  }\n  // AlienVault has 'pulse_info' field\n  else if (json.pulse_info !== undefined) {\n    alienData = json;\n    console.log('Found AlienVault data');\n  }\n  // IP-API has 'status' field\n  else if (json.status) {\n    ipapiData = json;\n    console.log('Found IP-API data');\n  }\n}\n\n// Build threat intel object\nconst threat_intel = {\n  ipinfo: null,\n  alienvault: null,\n  ipapi: null\n};\n\nif (ipinfoData && ipinfoData.loc) {\n  threat_intel.ipinfo = {\n    city: ipinfoData.city || 'Unknown',\n    country: ipinfoData.country || 'Unknown',\n    org: ipinfoData.org || 'Unknown',\n    location: ipinfoData.loc || 'Unknown'\n  };\n  console.log('Built IPInfo intel:', threat_intel.ipinfo);\n}\n\nif (alienData && alienData.pulse_info !== undefined) {\n  threat_intel.alienvault = {\n    pulse_count: alienData.pulse_info.count || 0,\n    reputation: alienData.reputation || 0\n  };\n  console.log('Built AlienVault intel:', threat_intel.alienvault);\n}\n\nif (ipapiData && ipapiData.status === 'success') {\n  threat_intel.ipapi = {\n    country: ipapiData.country || 'Unknown',\n    city: ipapiData.city || 'Unknown',\n    isp: ipapiData.isp || 'Unknown',\n    org: ipapiData.org || 'Unknown',\n    is_proxy: ipapiData.proxy || false,\n    is_hosting: ipapiData.hosting || false\n  };\n  console.log('Built IP-API intel:', threat_intel.ipapi);\n}\n\n// Combine everything with ORIGINAL data\nconst output = {\n  ip: stored.ip,\n  port: stored.port,\n  priority: stored.priority,\n  attack_type: stored.attack_type,\n  risk_score: stored.risk_score,\n  reasons: stored.reasons || stored.risk_reasons || [],\n  deepseek_verdict: stored.deepseek_verdict,\n  deepseek_reason: stored.deepseek_reason,\n  ai_confidence: stored.ai_confidence,\n  threat_intel: threat_intel\n};\n\nconsole.log('=== FINAL MERGED OUTPUT ===');\nconsole.log('IP:', output.ip);\nconsole.log('PORT:', output.port);\nconsole.log('VERDICT:', output.deepseek_verdict);\nconsole.log('Full output:', JSON.stringify(output));\n\nreturn [{ json: output }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -2416
+      ],
+      "id": "6c65e0f6-cee4-4efa-9f5f-03dbad9cafbc",
+      "name": "Merge All Data"
+    },
+    {
+      "parameters": {
+        "url": "=https://otx.alienvault.com/api/v1/indicators/IPv4/{{ $json.ip }}/general",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -272,
+        -2416
+      ],
+      "id": "6a7ce780-add8-43dd-a052-a8d37bff1fe1",
+      "name": "AlienVault",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -16,
+        -2432
+      ],
+      "id": "be983c7d-cbe2-4c16-8fd7-356d8c8d2619",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const geminiResponse = $input.first().json;\n\n  // Get the original data from Merge All Data node\n  const mergeData = $('Merge All Data').first().json;\n\n  console.log('=== FINAL OUTPUT ===');\n  console.log('Merge Data:', JSON.stringify(mergeData));\n\n  // Parse Gemini's verdict\n  let verdict = {};\n  try {\n    const content = geminiResponse.candidates[0].content.parts[0].text.trim();\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    verdict = JSON.parse(cleaned);\n  } catch (error) {\n    console.log('Parse error:', error);\n    verdict = {\n      verdict: 'ERROR',\n      confidence: 0,\n      reasoning: 'Failed to parse Gemini response',\n      severity: 'UNKNOWN',\n      recommendation: 'REVIEW',\n      classification: 'FALSE_POSITIVE',\n      false_positive_risk: 'HIGH'\n    };\n  }\n\n  // Build final Agent 2 output\n  const finalOutput = {\n    agent: 'HUNTER',\n    timestamp: new Date().toISOString(),\n    threat: {\n      ip: mergeData.ip || 'Unknown',\n      port: mergeData.port || 'Unknown',\n      attack_type: mergeData.attack_type || 'Unknown',\n      risk_score: mergeData.risk_score || 0,\n      priority: mergeData.priority || 'Unknown',\n      deepseek_verdict: mergeData.deepseek_verdict || 'Unknown',\n      deepseek_reason: mergeData.deepseek_reason || 'Unknown',\n      ai_confidence: mergeData.ai_confidence || 0\n    },\n    intelligence: mergeData.threat_intel || {},\n    analysis: {\n      verdict: verdict.verdict,\n      confidence: verdict.confidence,\n      reasoning: verdict.reasoning,\n      severity: verdict.severity,\n      recommendation: verdict.recommendation,\n      classification: verdict.classification || 'FALSE_POSITIVE',\n      false_positive_risk: verdict.false_positive_risk || 'MEDIUM'\n    }\n  };\n\n  console.log('Final output:', JSON.stringify(finalOutput));\n\n  return [{ json: finalOutput }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        -2416
+      ],
+      "id": "6fa6d8dc-5017-45e2-b3bb-d0c39f255154",
+      "name": "Final Output1"
+    },
+    {
+      "parameters": {
+        "jsCode": " const data = $input.first().json;\n\n  const prompt = `You are HUNTER, an elite cybersecurity threat analyst on the AI Security Council.\n\n  Analyze this IP threat:\n\n  IP ADDRESS: ${data.ip}\n  PORT: ${data.port}\n  RISK SCORE: ${data.risk_score}/100\n  ATTACK TYPE: ${data.attack_type}\n  PRIORITY: ${data.priority}\n  REASONS: ${data.reasons ? data.reasons.join(', ') : 'None'}\n\n  AGENT 1 TRIAGE:\n  - Verdict: ${data.deepseek_verdict || 'Unknown'}\n  - Reason: ${data.deepseek_reason || 'Unknown'}\n  - AI Confidence: ${data.ai_confidence || 0}/10\n\n  THREAT INTELLIGENCE:\n  ${JSON.stringify(data.threat_intel, null, 2)}\n\n  CRITICAL REQUIREMENT - TRUE POSITIVE / FALSE POSITIVE CLASSIFICATION:\n\n  Determine if this is a TRUE POSITIVE or FALSE POSITIVE threat:\n\n  **TRUE POSITIVE (TP)**: Real security threat requiring action\n  - Attack patterns match known malicious behavior\n  - IP has confirmed malicious history in threat intelligence\n  - High confidence in threat indicators\n  - Multiple IOCs (Indicators of Compromise) align\n  - Not a known legitimate service (CDN, cloud provider, security scanner)\n\n  **FALSE POSITIVE (FP)**: Benign activity misclassified as threat\n  - Legitimate business traffic (Cloudflare, AWS, Google, Azure, security scanners)\n  - Low severity with no corroborating threat intelligence\n  - Known false positive patterns (bots, crawlers, monitoring services)\n  - Reputation shows legitimate usage\n  - Single indicator without supporting evidence\n\n  Provide your analysis as valid JSON (NO markdown, NO code blocks):\n  {\n    \"verdict\": \"THREAT\" or \"SUSPICIOUS\" or \"BENIGN\",\n    \"confidence\": 0-100,\n    \"reasoning\": \"your detailed analysis\",\n    \"severity\": \"CRITICAL\" or \"HIGH\" or \"MEDIUM\" or \"LOW\",\n    \"recommendation\": \"BLOCK\" or \"MONITOR\" or \"ALLOW\",\n    \"classification\": \"TRUE_POSITIVE\" or \"FALSE_POSITIVE\",\n    \"false_positive_risk\": \"LOW\" or \"MEDIUM\" or \"HIGH\"\n  }`;\n\n    return [{\n    json: {\n      contents: [{\n        parts: [{\n          text: prompt\n        }]\n      }],\n      generationConfig: {\n        temperature: 0.7,\n        topK: 40,\n        topP: 0.95,\n        maxOutputTokens: 2048\n      }\n      // REMOVED: _original_data: data\n    }\n  }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -2416
+      ],
+      "id": "990e82a1-5c3b-49c7-b0fd-f915f59bbcf7",
+      "name": "gpt-4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyCEyDZu_2slsHp7F3-qBEP77uCo9zWxYiA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        688,
+        -2416
+      ],
+      "id": "d9509784-6e6e-4257-8314-be479b75d99b",
+      "name": "Gemini"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Store Original Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Original Data": {
+      "main": [
+        [
+          {
+            "node": "IPInfo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IP-API",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AlienVault",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "gpt-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IPInfo": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlienVault": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "IP-API": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt-4": {
+      "main": [
+        [
+          {
+            "node": "Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "main": [
+        [
+          {
+            "node": "Final Output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "06686d68-8793-48bd-9ae8-50b9f1a677c5",
+  "meta": {
+    "instanceId": "b86198f84e0a58e402d0619da29cdfc8d7ec4f853fe9bf6a59da48d88847bb2e"
+  },
+  "id": "hVtqhzgYFV8i7LB5",
+  "tags": []
+}

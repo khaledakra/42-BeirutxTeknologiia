@@ -1,0 +1,465 @@
+{
+  "name": "Agent-1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "80810849-ed88-407b-a6b5-7cf566f87a9d",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -688,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/cybersecurity_attacks.csv",
+        "options": {}
+      },
+      "id": "762713b7-1ca1-4f0f-9f8f-32e08350c782",
+      "name": "Read/Write Files from Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "headerRow": true
+        }
+      },
+      "id": "68988961-d1b1-46df-a2b1-21f003cdc188",
+      "name": "Extract from File",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract unique IPs with their attack info\nconst items = $input.all();\nconst seenIPs = new Set();\nconst threats = [];\n\nconsole.log(`Processing ${items.length} log entries...`);\n\nfor (const item of items) {\n  const data = item.json;\n  const ip = data['Source IP Address'];\n  \n  // Skip if no IP or already seen\n  if (!ip || seenIPs.has(ip)) continue;\n  \n  seenIPs.add(ip);\n  \n  threats.push({\n    json: {\n      ip: ip,\n      dest_port: data['Destination Port'],\n      action: data['Action Taken'],\n      attack_type: data['Attack Type'],\n      severity: data['Severity Level'],\n      malware: data['Malware Indicators'],\n      timestamp: data['Timestamp'],\n      protocol: data['Protocol']\n    }\n  });\n}\n\nconsole.log(`Found ${threats.length} unique IPs`);\n\nreturn threats;"
+      },
+      "id": "4830410d-2f2a-4e68-8235-e338d0dbf2eb",
+      "name": "Extract Unique IPs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Risk scoring - Agent 1: Triage\nconst items = $input.all();\nconst scored = [];\n\nconst dangerousPorts = [22, 23, 3389, 445, 135, 1433, 3306, 5900, 21, 25];\nconst highSeverity = ['High', 'Critical', 'Medium'];\n\nfor (const item of items) {\n  const { ip, dest_port, action, attack_type, severity, malware } = item.json;\n  \n  let risk = 0;\n  let reasons = [];\n  \n  // Port-based scoring\n  const port = parseInt(dest_port);\n  if (dangerousPorts.includes(port)) {\n    risk += 30;\n    reasons.push(`Dangerous port ${port}`);\n  }\n  \n  // Action-based scoring\n  if (action === 'Blocked') {\n    risk += 25;\n    reasons.push('Blocked by firewall');\n  }\n  \n  // Severity-based scoring\n  if (highSeverity.includes(severity)) {\n    risk += 20;\n    reasons.push(`${severity} severity`);\n  }\n  \n  // Malware indicator\n  if (malware && malware !== '') {\n    risk += 25;\n    reasons.push('Malware detected');\n  }\n  \n  // Attack type\n  if (attack_type && attack_type !== '') {\n    risk += 15;\n    reasons.push(`Attack: ${attack_type}`);\n  }\n  \n  // Determine priority\n  let priority = 'LOW';\n  if (risk >= 60) {\n    priority = 'HIGH';\n  } else if (risk >= 30) {\n    priority = 'MEDIUM';\n  }\n  \n  scored.push({\n    json: {\n      ...item.json,\n      risk_score: risk,\n      priority: priority,\n      risk_reasons: reasons.join(', ')\n    }\n  });\n}\n\n// Sort by risk score (highest first)\nscored.sort((a, b) => b.json.risk_score - a.json.risk_score);\n\nconst high = scored.filter(s => s.json.priority === 'HIGH').length;\nconst medium = scored.filter(s => s.json.priority === 'MEDIUM').length;\nconst low = scored.filter(s => s.json.priority === 'LOW').length;\n\nconsole.log(`Risk Distribution: ${high} HIGH, ${medium} MEDIUM, ${low} LOW`);\n\nreturn scored;"
+      },
+      "id": "121cb7c5-e9bd-445c-b6f5-b3bf54b37841",
+      "name": "AGENT 1: Risk Scoring (Triage)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": " const threats = $input.all();\n\n  // Build a summary of all threats for DeepSeek\n  const threatSummary = threats.map((item, index) => {\n    const t = item.json;\n    const reasons = Array.isArray(t.reasons) ? t.reasons.join(', ') : (t.reasons || 'Unknown');\n    return `${index + 1}. IP: ${t.ip}, Port: ${t.dest_port || t.port}, Risk: ${t.risk_score}/100, Priority: ${t.priority}, Reasons: ${reasons}`;\n  }).join('\\n');\n\n  const prompt = `You are TRIAGE, a rapid threat assessment AI agent.\n\n  Analyze these TOP 10 firewall threats and provide QUICK initial assessments:\n\n  ${threatSummary}\n\n  For each threat, provide a brief verdict. Respond with valid JSON array (NO markdown):\n  [\n    {\n      \"ip\": \"x.x.x.x\",\n      \"quick_verdict\": \"URGENT\" or \"INVESTIGATE\" or \"ROUTINE\",\n      \"reason\": \"brief reason (max 15 words)\"\n    }\n  ]`;\n\n  return [{\n    json: {\n      model: 'deepseek-chat',\n      messages: [\n        { role: 'system', content: 'You are Triage. Respond ONLY with valid JSON array.' },\n        { role: 'user', content: prompt }\n      ],\n      temperature: 0.3\n    }\n  }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -112
+      ],
+      "id": "091aedc2-5a9b-4d05-ae6a-c9c2e20421b6",
+      "name": "Build DeepSeek Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-a42f2b6dd2854b8fa14b2b9820d2a650"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        832,
+        -112
+      ],
+      "id": "44936616-8b25-44d1-97bf-8c4592b33830",
+      "name": "DeepSeek",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "AuKrsQk9PxBPyU8d",
+          "name": "Deepseek"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "  const reviewResponse = $input.first().json;\n  const originalThreats = $('Top 10 Threats').all();\n\n  // Parse the reviewed verdicts\n  let review = {};\n  try {\n    const content = reviewResponse.choices[0].message.content.trim();\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    review = JSON.parse(cleaned);\n  } catch (error) {\n    review = {\n      confidence_score: 0,\n      final_verdicts: [],\n      review_notes: 'Parse error'\n    };\n  }\n\n  // Merge with original data\n  const enrichedThreats = originalThreats.map(item => {\n    const threat = item.json;\n    const verdict = review.final_verdicts.find(v => v.ip === threat.ip) || {\n      quick_verdict: 'UNKNOWN',\n      reason: 'No verdict'\n    };\n\n    return {\n      json: {\n        ip: threat.ip,\n        port: threat.dest_port || threat.port,\n        attack_type: threat.attack_type,\n        severity: threat.severity,\n        risk_score: threat.risk_score,\n        priority: threat.priority,\n        timestamp: threat.timestamp,\n        deepseek_verdict: verdict.quick_verdict,\n        deepseek_reason: verdict.reason,\n        ai_confidence: review.confidence_score,\n        review_notes: review.review_notes\n      }\n    };\n  });\n\n  return enrichedThreats;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        -112
+      ],
+      "id": "4141f531-5d16-47cd-8846-a3f92e1d907e",
+      "name": "Merge DeepSeek Verdicts"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Limit to top threats for API analysis\nconst items = $input.all();\nconst LIMIT = 10;\n\nconst topThreats = items.slice(0, LIMIT);\n\nconsole.log(`Selected top ${topThreats.length} threats for deep analysis`);\n\nreturn topThreats;"
+      },
+      "id": "130ae25a-1932-455b-8daf-aa9b06c8887a",
+      "name": "Top 10 Threats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const deepseekResponse = $input.first().json;\n\n  // Get retry count (default 0)\n  const retryCount = deepseekResponse.retry_count || 0;\n\n  // Parse DeepSeek's initial verdicts\n  let verdicts = [];\n  try {\n    const content = deepseekResponse.choices[0].message.content.trim();\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    verdicts = JSON.parse(cleaned);\n  } catch (error) {\n    return [{\n      json: {\n        confidence_score: 0,\n        final_verdicts: [],\n        review_notes: 'Failed to parse initial DeepSeek response',\n        retry_count: retryCount + 1\n      }\n    }];\n  }\n\n  // Get original threat data\n  const threats = $('Top 10 Threats').all();\n  const threatSummary = threats.map((item, index) => {\n    const t = item.json;\n    return `${index + 1}. IP: ${t.ip}, Risk: ${t.risk_score}/100`;\n  }).join('\\n');\n\n  // Build STRONGER prompt if this is a retry\n  const retryWarning = retryCount > 0 ?\n    `\\n\\n⚠️ RETRY #${retryCount}: Your previous confidence was TOO LOW. BE MORE CAREFUL THIS TIME!\\n` : '';\n\n  const reviewPrompt = `You just analyzed these 10 threats:\n\n  ${threatSummary}\n\n  Your verdicts were:\n  ${JSON.stringify(verdicts, null, 2)}\n  ${retryWarning}\n  CRITICAL SELF-REVIEW:\n  1. Rate your confidence 0-10 (be brutally honest)\n  2. Are verdicts consistent with risk scores?\n  3. Are reasons clear and actionable?\n  4. Did you apply the same logic to all 10?\n\n  ⚠️ YOUR CONFIDENCE MUST BE 9 OR 10 TO PROCEED!\n\n  If confidence < 9:\n  - Re-analyze more carefully\n  - Check for inconsistencies\n  - Improve your reasoning\n\n  Respond with JSON (NO markdown):\n  {\n    \"confidence_score\": 0-10,\n    \"review_notes\": \"honest self-assessment\",\n    \"improvements_made\": \"what you changed\",\n    \"final_verdicts\": [\n      {\"ip\": \"x.x.x.x\", \"quick_verdict\": \"URGENT|INVESTIGATE|ROUTINE\", \"reason\": \"improved reason\"}\n    ]\n  }`;\n\n  return [{\n    json: {\n      model: 'deepseek-chat',\n      messages: [\n        {\n          role: 'system',\n          content: 'You are a critical self-reviewer. ONLY respond if your confidence is 9 or 10. If below 9, improve your analysis NOW.'\n        },\n        { role: 'user', content: reviewPrompt }\n      ],\n      temperature: 0.3, // Lower temperature for more careful analysis\n      retry_count: retryCount\n    }\n  }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -112
+      ],
+      "id": "043f9a03-1e39-40ef-95ed-113f66adcd17",
+      "name": "DeepSeek Self-Review Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-a42f2b6dd2854b8fa14b2b9820d2a650"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1184,
+        -112
+      ],
+      "id": "9da8e44c-7506-4986-b5d3-2885b101ada9",
+      "name": "DeepSeek Review",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "AuKrsQk9PxBPyU8d",
+          "name": "Deepseek"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "69ad9402-32f2-4ec9-9520-56d301c74954",
+              "leftValue": "=  {{     (() => {       try {         const content = $json.choices[0].message.content.trim();         const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');         const review = JSON.parse(cleaned);         return review.confidence_score;       } catch {         return 0;       }     })()   }}",
+              "rightValue": 9,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        -112
+      ],
+      "id": "0b529716-40cc-4bf5-8475-53ba4c3b4447",
+      "name": "Confidence >= 9?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2cb9a358-fd4a-46de-a6dd-6950a17a59a9",
+              "leftValue": "= {{     (() => {       try {         const content = $json.choices[0].message.content.trim();         const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');         const review = JSON.parse(cleaned);         return review.retry_count || 0;       } catch {         return 0;       }     })()   }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1376,
+        64
+      ],
+      "id": "e54e1451-82cb-4224-844c-ca2b8f5bc274",
+      "name": "Retry Count < 3?"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const reviewResponse = $input.first().json;\n\n  // Parse review\n  let review = {};\n  try {\n    const content = reviewResponse.choices[0].message.content.trim();\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n    review = JSON.parse(cleaned);\n  } catch (error) {\n    review = { retry_count: 0 };\n  }\n\n  // Get original threats\n  const threats = $('Top 10 Threats').all();\n\n  // Rebuild request with stronger instructions\n  const threatSummary = threats.map((item, index) => {\n    const t = item.json;\n    const reasons = Array.isArray(t.reasons) ? t.reasons.join(', ') : (t.reasons || 'Unknown');\n    return `${index + 1}. IP: ${t.ip}, Port: ${t.dest_port || t.port}, Risk: ${t.risk_score}/100, Priority: ${t.priority}, Reasons: ${reasons}`;\n  }).join('\\n');\n\n  const retryCount = (review.retry_count || 0) + 1;\n\n  const prompt = `⚠️ RETRY ATTEMPT ${retryCount}/3 ⚠️\n\n  You are TRIAGE, a rapid threat assessment AI agent.\n\n  YOUR PREVIOUS CONFIDENCE WAS TOO LOW (< 9). ANALYZE MORE CAREFULLY THIS TIME!\n\n  Analyze these TOP 10 firewall threats:\n\n  ${threatSummary}\n\n  IMPORTANT: \n  - Be more thorough\n  - Apply consistent logic\n  - Rate confidence honestly\n  - ONLY output if 9/10 or 10/10 confident\n\n  Respond with valid JSON:\n  {\n    \"confidence_score\": 0-10,\n    \"verdicts\": [\n      {\"ip\": \"x.x.x.x\", \"quick_verdict\": \"URGENT|INVESTIGATE|ROUTINE\", \"reason\": \"clear reason\"}\n    ]\n  }`;\n\n  return [{\n    json: {\n      model: 'deepseek-chat',\n      messages: [\n        { role: 'system', content: 'You are Triage. Be MORE careful this time. Respond ONLY with valid JSON.' },\n        { role: 'user', content: prompt }\n      ],\n      temperature: 0.2, // Even lower for retry\n      retry_count: retryCount\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        256
+      ],
+      "id": "f2cff20f-ea2e-45ff-96b4-184b62484638",
+      "name": "Prepare Retry"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const reviewResponse = $input.first().json;\n\n  return [{\n    json: {\n      status: 'MAX_RETRIES_REACHED',\n      message: 'DeepSeek could not reach confidence >= 9 after 3 attempts',\n      warning: 'MANUAL REVIEW REQUIRED',\n      last_confidence: (() => {\n        try {\n          const content = reviewResponse.choices[0].message.content.trim();\n          const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '');\n          const review = JSON.parse(cleaned);\n          return review.confidence_score;\n        } catch {\n          return 0;\n        }\n      })(),\n      raw_response: reviewResponse\n    }\n  }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        80
+      ],
+      "id": "234af59b-6026-49bf-b582-270cb65c4e7b",
+      "name": "Max Retries Warning"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Extract Unique IPs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Unique IPs": {
+      "main": [
+        [
+          {
+            "node": "AGENT 1: Risk Scoring (Triage)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AGENT 1: Risk Scoring (Triage)": {
+      "main": [
+        [
+          {
+            "node": "Top 10 Threats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build DeepSeek Request": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek Self-Review Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top 10 Threats": {
+      "main": [
+        [
+          {
+            "node": "Build DeepSeek Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Self-Review Request": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Review": {
+      "main": [
+        [
+          {
+            "node": "Confidence >= 9?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence >= 9?": {
+      "main": [
+        [
+          {
+            "node": "Merge DeepSeek Verdicts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Count < 3?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Count < 3?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Max Retries Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Retry": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "85ec8e9c-2509-4856-8bdc-b1f2d943a625",
+  "meta": {
+    "instanceId": "b86198f84e0a58e402d0619da29cdfc8d7ec4f853fe9bf6a59da48d88847bb2e"
+  },
+  "id": "QbDjECUcgw8lZF1x",
+  "tags": []
+}

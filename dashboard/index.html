@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Security Council - Threat Analysis Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000000;
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid rgba(255,255,255,0.2);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: #1a1a1a;
+            border-radius: 15px;
+            padding: 35px;
+            margin-bottom: 40px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+
+        .card h2 {
+            font-size: 1.8em;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 215, 0, 0.3);
+            color: #ffd700;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #222;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #444;
+        }
+
+        .stat-card h3 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            color: #ff6b6b;
+        }
+
+        .stat-card p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .agent-card {
+            background: #222;
+            padding: 25px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            min-height: 250px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .agent-card h3 {
+            font-size: 1.4em;
+            margin-bottom: 15px;
+            color: #4ecdc4;
+        }
+
+        .agent-card .reasoning {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 400px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 5px;
+            margin-top: 10px;
+            line-height: 1.6;
+            font-size: 0.95em;
+            border: 1px solid #333;
+        }
+
+        .agent-card .reasoning::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .agent-card .reasoning::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        .agent-card .reasoning::-webkit-scrollbar-thumb {
+            background: #4ecdc4;
+            border-radius: 4px;
+        }
+
+        .agent-card .verdict {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .verdict.THREAT, .verdict.URGENT { color: #ff6b6b; }
+        .verdict.SUSPICIOUS, .verdict.INVESTIGATE { color: #ffd93d; }
+        .verdict.BENIGN, .verdict.ROUTINE { color: #6bcf7f; }
+
+        .threat-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .threat-item {
+            background: #222;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            border-left: 5px solid;
+            border: 1px solid #444;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .threat-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .threat-item p {
+            word-wrap: break-word;
+            white-space: normal;
+            line-height: 1.8;
+            margin: 12px 0;
+            font-size: 0.95em;
+        }
+
+        .threat-item.critical {
+            border-left-color: #ff4757;
+            background: linear-gradient(135deg, #222 0%, #2a1a1a 100%);
+        }
+        .threat-item.high {
+            border-left-color: #ffa502;
+            background: linear-gradient(135deg, #222 0%, #2a2218 100%);
+        }
+        .threat-item.medium {
+            border-left-color: #ffd93d;
+            background: linear-gradient(135deg, #222 0%, #2a2820 100%);
+        }
+        .threat-item.low {
+            border-left-color: #6bcf7f;
+            background: linear-gradient(135deg, #222 0%, #1a2a20 100%);
+        }
+
+        .threat-item h4 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .threat-item p strong {
+            color: #ffd700;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ecdc4, #44a08d);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: width 0.3s ease;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 5px;
+        }
+
+        .badge.critical { background: #ff4757; }
+        .badge.high { background: #ffa502; }
+        .badge.medium { background: #ffd93d; color: #333; }
+        .badge.low { background: #6bcf7f; color: #333; }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.5em;
+        }
+
+        .recommendation {
+            background: linear-gradient(135deg, #2a2a00 0%, #1a1a00 100%);
+            border-left: 4px solid #ffd700;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 10px;
+            border: 1px solid #555;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.1);
+        }
+
+        .recommendation h3 {
+            color: #ffd700;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .recommendation ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .recommendation li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 2s infinite;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .geo-chart {
+            margin: 20px 0;
+        }
+
+        .geo-bar {
+            margin: 10px 0;
+        }
+
+        .geo-bar-label {
+            display: inline-block;
+            width: 150px;
+        }
+
+        .geo-bar-fill {
+            display: inline-block;
+            height: 25px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 5px;
+            padding: 0 10px;
+            line-height: 25px;
+        }
+
+        /* TP/FP Badge Styles */
+        .tp-fp-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin: 12px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tp-badge {
+            background: rgba(46, 204, 113, 0.3);
+            color: #2ecc71;
+            border: 2px solid #2ecc71;
+            box-shadow: 0 2px 10px rgba(46, 204, 113, 0.2);
+        }
+
+        .fp-badge {
+            background: rgba(241, 196, 15, 0.3);
+            color: #f1c40f;
+            border: 2px solid #f1c40f;
+            box-shadow: 0 2px 10px rgba(241, 196, 15, 0.2);
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        /* Priority Threats Styling */
+        .threat-item.critical h4::before {
+            content: "🔴 ";
+        }
+
+        .threat-item.high h4::before {
+            content: "🟠 ";
+        }
+
+        .threat-item.medium h4::before {
+            content: "🟡 ";
+        }
+
+        .threat-item.low h4::before {
+            content: "🟢 ";
+        }
+
+        /* Scrollbar styling */
+        .threat-list::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .threat-list::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 5px;
+        }
+
+        .threat-list::-webkit-scrollbar-thumb {
+            background: #ffd700;
+            border-radius: 5px;
+        }
+
+        .threat-list::-webkit-scrollbar-thumb:hover {
+            background: #ffed4e;
+        }
+
+        /* Alert box improvements */
+        .alert-box {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+
+        .alert-box strong {
+            color: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ AI SECURITY COUNCIL</h1>
+            <p>Real-time Threat Analysis Dashboard</p>
+        </div>
+
+        <div id="loadingSection" class="loading">
+            <p>⏳ Waiting for analysis data...</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">Load data from N8N workflow or paste JSON below</p>
+            <button onclick="showFileInput()">📂 Load JSON File</button>
+            <button onclick="loadSampleData()">🔄 Load Sample Data</button>
+            <input type="file" id="fileInput" accept=".json" style="display:none;" onchange="handleFileSelect(event)">
+        </div>
+
+        <div id="dashboardContent" style="display: none;">
+            <!-- Executive Summary -->
+            <div class="card">
+                <h2>📊 EXECUTIVE SUMMARY</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="threatLevel">-</h3>
+                        <p>Overall Threat Level</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="totalThreats">0</h3>
+                        <p>Threats Analyzed</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="confidence">0%</h3>
+                        <p>Analysis Confidence</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="campaignType">-</h3>
+                        <p>Campaign Assessment</p>
+                    </div>
+                </div>
+                <div class="recommendation">
+                    <h3>🎯 Executive Summary</h3>
+                    <p id="executiveSummary">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Agent Consensus -->
+            <div class="card">
+                <h2>🤖 AI AGENT CONSENSUS</h2>
+                <div class="agents-grid" id="agentsGrid">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- TP/FP Analysis Section -->
+            <div class="card">
+                <h2>🎯 True Positive / False Positive Analysis</h2>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="true-positive-count">-</h3>
+                        <p>True Positives</p>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3 id="false-positive-count">-</h3>
+                        <p>False Positives</p>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3 id="fp-rate">-</h3>
+                        <p>FP Rate</p>
+                    </div>
+
+                    <div class="stat-card">
+                        <h3 id="accuracy">-</h3>
+                        <p>Detection Accuracy</p>
+                    </div>
+                </div>
+
+                <div class="recommendation">
+                    <h3>Analysis Summary</h3>
+                    <p id="tp-fp-text">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Geographic Analysis -->
+            <div class="card">
+                <h2>🌍 GEOGRAPHIC THREAT DISTRIBUTION</h2>
+                <div class="geo-chart" id="geoChart">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Priority Threats -->
+            <div class="card">
+                <h2>🚨 TOP PRIORITY THREATS</h2>
+                <div class="threat-list" id="priorityThreats">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Strategic Recommendations -->
+            <div class="card">
+                <h2>💡 STRATEGIC RECOMMENDATIONS</h2>
+                <div id="recommendations">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <!-- All Threats -->
+            <div class="card">
+                <h2>📋 ALL THREAT ASSESSMENTS</h2>
+                <div class="threat-list" id="allThreats">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let analysisData = null;
+
+        function showFileInput() {
+            document.getElementById('fileInput').click();
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        loadData(data);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function loadSampleData() {
+            // Sample data structure - will be replaced with real data
+            const sampleData = {
+                agent: 'ORACLE',
+                timestamp: new Date().toISOString(),
+                strategic_analysis: {
+                    overall_threat_level: 'HIGH',
+                    campaign_type: 'COORDINATED_CAMPAIGN',
+                    threat_actor_profile: 'Coordinated threat actors targeting infrastructure',
+                    confidence: 85,
+                    executive_summary: 'Multiple high-risk threats detected from Asia-Pacific region with coordinated attack patterns. Government infrastructure compromise suspected.'
+                },
+                threat_statistics: {
+                    total_count: 10,
+                    severity_distribution: {
+                        critical: 1,
+                        high: 6,
+                        medium: 3,
+                        low: 0
+                    },
+                    geographic_distribution: {
+                        top_countries: [
+                            { country: 'India', count: 2 },
+                            { country: 'United States', count: 3 },
+                            { country: 'France', count: 1 }
+                        ]
+                    },
+                    agent_consensus: {
+                        agent1_triage: { urgent: 6, investigate: 3, routine: 1 },
+                        agent2_hunter: { threat: 7, suspicious: 3, benign: 0 }
+                    }
+                },
+                recommendations: {
+                    immediate_actions: [
+                        'Block 7 high-confidence threats immediately',
+                        'Escalate DoD infrastructure anomaly to SOC',
+                        'Enable enhanced monitoring on Asia-Pacific traffic'
+                    ],
+                    short_term_priorities: [
+                        'Investigate coordinated campaign indicators',
+                        'Review firewall rules for high-risk ports'
+                    ],
+                    long_term_strategy: 'Implement geofencing for high-risk regions and enhance APT detection capabilities'
+                },
+                priority_threats: [
+                    {
+                        ip: '49.32.208.167',
+                        reason: 'Critical risk score 85/100, intrusion from India, immediate threat'
+                    }
+                ],
+                individual_threats: []
+            };
+            loadData(sampleData);
+        }
+
+        function loadData(data) {
+            // Handle array format (N8N returns array of 1 item)
+            if (Array.isArray(data) && data.length > 0) {
+                data = data[0];
+            }
+
+            analysisData = data;
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+            renderDashboard(data);
+        }
+
+        function renderDashboard(data) {
+            // Executive Summary
+            const analysis = data.strategic_analysis || {};
+            const stats = data.threat_statistics || {};
+
+            document.getElementById('threatLevel').textContent = analysis.overall_threat_level || 'UNKNOWN';
+            document.getElementById('totalThreats').textContent = stats.total_count || 0;
+            document.getElementById('confidence').textContent = (analysis.confidence || 0) + '%';
+            document.getElementById('campaignType').textContent = (analysis.campaign_type || 'UNKNOWN').replace(/_/g, ' ');
+            document.getElementById('executiveSummary').textContent = analysis.executive_summary || 'No summary available';
+
+            // Agent Consensus
+            renderAgents(data);
+
+            // Geographic Chart
+            renderGeoChart(stats.geographic_distribution);
+
+            // Priority Threats
+            renderPriorityThreats(data.priority_threats || []);
+
+            // Recommendations
+            renderRecommendations(data.recommendations || {});
+
+            // All Threats
+            renderAllThreats(data.individual_threats || []);
+
+            // TP/FP Statistics
+            updateTPFPDisplay(data);
+        }
+
+        function renderAgents(data) {
+            const agentsGrid = document.getElementById('agentsGrid');
+            const consensus = data.threat_statistics?.agent_consensus || {};
+
+            // Use generic agent role descriptions (aggregate stats, not specific threat reasoning)
+            const agent1Reasoning = 'Rapid initial assessment using risk scoring based on port analysis, severity levels, malware indicators, and attack types. Prioritizes threats for deep investigation.';
+            const agent2Reasoning = 'Deep threat intelligence analysis integrating IPInfo, AlienVault OTX, and IP-API data. Performs True Positive/False Positive classification to reduce alert fatigue.';
+            const agent3Reasoning = data.strategic_analysis?.executive_summary ||
+                                   'Strategic pattern analysis with geopolitical context assessment. Evaluates agent consensus, identifies APT campaigns, and provides executive-level recommendations.';
+
+            agentsGrid.innerHTML = `
+                <div class="agent-card">
+                    <h3>🎯 Agent 1: TRIAGE</h3>
+                    <p><strong>DeepSeek AI</strong></p>
+                    <div class="verdict URGENT">${consensus.agent1_triage?.urgent || 0} URGENT</div>
+                    <p>${consensus.agent1_triage?.investigate || 0} Investigate | ${consensus.agent1_triage?.routine || 0} Routine</p>
+                    <div class="reasoning">${agent1Reasoning}</div>
+                </div>
+                <div class="agent-card">
+                    <h3>🔍 Agent 2: HUNTER</h3>
+                    <p><strong>DeepSeek + Threat Intel APIs</strong></p>
+                    <div class="verdict THREAT">${consensus.agent2_hunter?.threat || 0} THREAT</div>
+                    <p>${consensus.agent2_hunter?.suspicious || 0} Suspicious | ${consensus.agent2_hunter?.benign || 0} Benign</p>
+                    <div class="reasoning">${agent2Reasoning}</div>
+                </div>
+                <div class="agent-card">
+                    <h3>🧙 Agent 3: ORACLE</h3>
+                    <p><strong>Gemini Strategic AI</strong></p>
+                    <div class="verdict">Strategic Analysis Complete</div>
+                    <p>Pattern Detection & Geopolitical Assessment</p>
+                    <div class="reasoning">${agent3Reasoning}</div>
+                </div>
+            `;
+        }
+
+        function renderGeoChart(geo) {
+            const geoChart = document.getElementById('geoChart');
+            if (!geo || !geo.top_countries) {
+                geoChart.innerHTML = '<p>No geographic data available</p>';
+                return;
+            }
+
+            let html = '<div style="font-size: 1.2em; line-height: 2;">';
+
+            geo.top_countries.forEach(country => {
+                html += `<p style="margin: 15px 0;"><strong>${country.country}:</strong> ${country.count}</p>`;
+            });
+
+            html += '</div>';
+            geoChart.innerHTML = html;
+        }
+
+        function renderPriorityThreats(threats) {
+            const container = document.getElementById('priorityThreats');
+            if (!threats || threats.length === 0) {
+                container.innerHTML = '<p>No priority threats identified</p>';
+                return;
+            }
+
+            let html = '';
+            threats.forEach((threat, idx) => {
+                html += `
+                    <div class="threat-item critical">
+                        <h4>#${idx + 1}: ${threat.ip}</h4>
+                        <p style="white-space: pre-wrap; word-wrap: break-word;">💬 ${threat.reason}</p>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function renderRecommendations(recs) {
+            const container = document.getElementById('recommendations');
+            let html = '';
+
+            if (recs.immediate_actions && recs.immediate_actions.length > 0) {
+                html += '<div class="recommendation"><h3>🚨 Immediate Actions</h3><ul>';
+                recs.immediate_actions.forEach(action => {
+                    html += `<li style="margin: 15px 0; line-height: 1.8;">${action}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            if (recs.short_term_priorities && recs.short_term_priorities.length > 0) {
+                html += '<div class="recommendation"><h3>📋 Short-term Priorities</h3><ul>';
+                recs.short_term_priorities.forEach(priority => {
+                    html += `<li style="margin: 15px 0; line-height: 1.8;">${priority}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            if (recs.long_term_strategy) {
+                html += `<div class="recommendation"><h3>🎯 Long-term Strategy</h3><p style="line-height: 1.8; margin-top: 10px;">${recs.long_term_strategy}</p></div>`;
+            }
+
+            container.innerHTML = html || '<p>No recommendations available</p>';
+        }
+
+        function renderAllThreats(threats) {
+            const container = document.getElementById('allThreats');
+            if (!threats || threats.length === 0) {
+                container.innerHTML = '<p>No threat data available</p>';
+                return;
+            }
+
+            let html = '';
+            threats.forEach((threat, idx) => {
+                // Extract data from Agent 3 output structure
+                const ip = threat.threat?.ip || 'Unknown';
+                const port = threat.threat?.port || 'Unknown';
+                const attackType = threat.threat?.attack_type || 'Unknown';
+
+                // Get verdict and reasoning from oracle_strategic_analysis (Agent 3's final verdict)
+                const verdict = threat.oracle_strategic_analysis?.verdict ||
+                               threat.security_council_verdicts?.agent3_oracle?.verdict || 'Unknown';
+                const reasoning = threat.oracle_strategic_analysis?.strategic_reasoning ||
+                                 threat.security_council_verdicts?.agent3_oracle?.reasoning || 'N/A';
+
+                // Get location from Agent 2's threat intelligence
+                const location = threat.security_council_verdicts?.agent2_hunter?.threat_intel?.ipinfo?.city || 'Unknown';
+                const country = threat.security_council_verdicts?.agent2_hunter?.threat_intel?.ipinfo?.country || 'Unknown';
+
+                // Determine severity from oracle's verdict or Agent 2
+                let severity = 'medium';
+                if (verdict === 'THREAT') severity = 'critical';
+                else if (verdict === 'SUSPICIOUS') severity = 'high';
+                else if (verdict === 'BENIGN') severity = 'low';
+
+                // TP/FP Classification
+                const classification = threat.oracle_strategic_analysis?.classification ||
+                                      threat.security_council_verdicts?.agent2_hunter?.classification;
+                const fpRisk = threat.oracle_strategic_analysis?.false_positive_risk ||
+                              threat.security_council_verdicts?.agent2_hunter?.false_positive_risk || 'MEDIUM';
+
+                let tpfpBadge = '';
+                if (classification === 'TRUE_POSITIVE' || (classification === undefined && fpRisk === 'LOW')) {
+                    tpfpBadge = '<span class="tp-fp-badge tp-badge">✓ TRUE POSITIVE</span>';
+                } else {
+                    tpfpBadge = '<span class="tp-fp-badge fp-badge">⚠️ LIKELY FALSE POSITIVE</span>';
+                }
+
+                html += `
+                    <div class="threat-item ${severity}">
+                        <h4>Threat #${idx + 1}: ${ip}:${port}</h4>
+                        ${tpfpBadge}
+                        <p><strong>Attack Type:</strong> ${attackType}</p>
+                        <p><strong>Location:</strong> ${location}, ${country}</p>
+                        <p><strong>Oracle Verdict:</strong> <span class="badge ${severity}">${verdict}</span></p>
+                        <p><strong>Strategic Analysis:</strong> ${reasoning}</p>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Calculate TP/FP statistics
+        function calculateTPFP(data) {
+            if (!data.individual_threats || data.individual_threats.length === 0) {
+                return { tp: 0, fp: 0, total: 0, fpRate: 0, accuracy: 0 };
+            }
+
+            let truePositives = 0;
+            let falsePositives = 0;
+
+            data.individual_threats.forEach(threat => {
+                const classification = threat.oracle_strategic_analysis?.classification ||
+                                      threat.analysis?.classification;
+                const fpRisk = threat.oracle_strategic_analysis?.false_positive_risk ||
+                              threat.analysis?.false_positive_risk || 'MEDIUM';
+
+                // Use explicit classification if available
+                if (classification === 'TRUE_POSITIVE' || classification === 'TP') {
+                    truePositives++;
+                } else if (classification === 'FALSE_POSITIVE' || classification === 'FP') {
+                    falsePositives++;
+                } else {
+                    // Infer from false_positive_risk
+                    if (fpRisk === 'LOW') {
+                        truePositives++;
+                    } else {
+                        falsePositives++;
+                    }
+                }
+            });
+
+            const total = truePositives + falsePositives;
+            const fpRate = total > 0 ? ((falsePositives / total) * 100).toFixed(1) : 0;
+            const accuracy = total > 0 ? ((truePositives / total) * 100).toFixed(1) : 0;
+
+            return { tp: truePositives, fp: falsePositives, total, fpRate, accuracy };
+        }
+
+        // Update TP/FP display
+        function updateTPFPDisplay(data) {
+            const stats = calculateTPFP(data);
+
+            document.getElementById('true-positive-count').textContent = stats.tp;
+            document.getElementById('false-positive-count').textContent = stats.fp;
+            document.getElementById('fp-rate').textContent = stats.fpRate + '%';
+            document.getElementById('accuracy').textContent = stats.accuracy + '%';
+
+            const summaryText = `Detected ${stats.tp} true threats and ${stats.fp} likely false positives out of ${stats.total} total alerts. Detection accuracy: ${stats.accuracy}%`;
+            document.getElementById('tp-fp-text').textContent = summaryText;
+        }
+
+        // Auto-load latest data from API
+        async function autoLoadLatest() {
+            try {
+                const response = await fetch('http://localhost:3000/api/latest');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (!data.error) {
+                        console.log('✅ Auto-loaded latest data');
+                        loadData(data);
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.log('No latest data available yet');
+            }
+            return false;
+        }
+
+        // Auto-refresh every 5 seconds
+        function startAutoRefresh() {
+            setInterval(async () => {
+                const loaded = await autoLoadLatest();
+                if (loaded) {
+                    console.log('🔄 Dashboard auto-refreshed');
+                }
+            }, 5000); // 5 seconds
+        }
+
+        // Check for data in URL parameters or auto-load
+        window.onload = async function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const dataParam = urlParams.get('data');
+
+            if (dataParam) {
+                try {
+                    const data = JSON.parse(decodeURIComponent(dataParam));
+                    loadData(data);
+                } catch (e) {
+                    console.error('Failed to parse URL data:', e);
+                }
+            } else {
+                // Try to auto-load latest data
+                const loaded = await autoLoadLatest();
+                if (!loaded) {
+                    // No data yet, show loading state
+                    console.log('Waiting for workflow data...');
+                }
+            }
+
+            // Start auto-refresh
+            startAutoRefresh();
+        };
+    </script>
+</body>
+</html>

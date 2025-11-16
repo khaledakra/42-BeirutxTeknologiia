@@ -1,0 +1,141 @@
+{
+  "name": "Agent0-3",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        -480
+      ],
+      "id": "6a773c2a-efb7-45b9-8419-0b290a3e270e",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n  const prompt = `You are ORACLE, the strategic pattern analyst on the AI Security Council.\n\n  Your role: Provide deep strategic analysis considering geopolitical context, attack patterns, and false positive detection.\n\n  THREAT SUMMARY:\n  IP Address: ${data.ip}\n  Port: ${data.port}\n  Attack Type: ${data.attack_type}\n\n  AGENT 1 (TRIAGE with DeepSeek AI) SAYS:\n  - Verdict: ${data.agent1_assessment.verdict}\n  - Risk Score: ${data.agent1_assessment.risk_score}/100\n  - Priority: ${data.agent1_assessment.priority}\n  - Reason: ${data.agent1_assessment.reason}\n  - AI Confidence: ${data.agent1_assessment.confidence}/10\n\n  AGENT 2 (HUNTER with GPT-4 AI) SAYS:\n  - Verdict: ${data.agent2_assessment.verdict}\n  - Confidence: ${data.agent2_assessment.confidence}%\n  - Reasoning: ${data.agent2_assessment.reasoning}\n  - Severity: ${data.agent2_assessment.severity}\n  - Recommendation: ${data.agent2_assessment.recommendation}\n\n  THREAT INTELLIGENCE DATA:\n  ${JSON.stringify(data.agent2_assessment.threat_intel, null, 2)}\n\n  YOUR STRATEGIC ANALYSIS MUST CONSIDER:\n\n  1. GEOPOLITICAL CONTEXT\n     - Is the origin country/organization known for threat actors?\n     - Is this a trusted infrastructure provider?\n\n  2. FALSE POSITIVE RISK\n     - Could this be legitimate traffic? (CDN, cloud services, security research)\n     - Does the infrastructure type match typical attack patterns?\n\n  3. ATTACK PATTERN ANALYSIS\n     - Does this fit known APT signatures or campaigns?\n     - Is this isolated or part of coordinated activity?\n\n  4. CONTEXTUAL INTELLIGENCE\n     - Infrastructure type (hosting vs residential)\n     - Reputation scores and historical data\n     - Location consistency\n\n  5. AGENT CONSENSUS\n     - Do Agents 1 & 2 agree?\n     - If they disagree, analyze why\n     - Provide YOUR independent verdict (you can disagree with both!)\n\n  Respond with ONLY valid JSON (NO markdown, NO code blocks):\n  {\n    \"verdict\": \"THREAT\" or \"SUSPICIOUS\" or \"BENIGN\",\n    \"confidence\": 0-100,\n    \"strategic_reasoning\": \"your detailed analysis focusing on patterns, context, and strategic assessment\",\n    \"false_positive_risk\": \"LOW\" or \"MEDIUM\" or \"HIGH\",\n    \"attack_campaign_assessment\": \"ISOLATED\" or \"COORDINATED\" or \"APT_SUSPECTED\" or \"LIKELY_BENIGN\",\n    \"geopolitical_notes\": \"context about origin country/organization and threat landscape\",\n    \"final_recommendation\": \"BLOCK\" or \"MONITOR\" or \"ALLOW\" or \"ESCALATE_TO_SOC\",\n    \"agrees_with_agent1\": true or false,\n    \"agrees_with_agent2\": true or false,\n    \"disagreement_reason\": \"explain why you disagree if applicable, or null if you agree\"\n  }`;\n\n  return [{\n    json: {\n      contents: [{\n        parts: [{\n          text: prompt\n        }]\n      }],\n        generationConfig: {\n    temperature: 0.7,\n    topK: 40,\n    topP: 0.95,\n    maxOutputTokens: 4096  // ← Increased from 2048\n  }\n    }\n  }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        -480
+      ],
+      "id": "5aad88ae-66b6-42ce-b4f1-117f9a8873b5",
+      "name": "Build Gemini Strategic Prompt1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyCEyDZu_2slsHp7F3-qBEP77uCo9zWxYiA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1584,
+        -480
+      ],
+      "id": "26b59d8b-2bdb-4868-a70b-a76876ad43b0",
+      "name": "Gemini API1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\n  const combinedData = $('Combine Both Agents1').first().json;\n\n  // Parse Gemini's strategic analysis\n  let oracleVerdict = {};\n  try {\n    const content = geminiResponse.candidates[0].content.parts[0].text.trim();\n    // Remove markdown code blocks if present\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').replace(/```/g, '');\n    oracleVerdict = JSON.parse(cleaned);\n  } catch (error) {\n    oracleVerdict = {\n      verdict: 'ERROR',\n      confidence: 0,\n      strategic_reasoning: 'Failed to parse Gemini response: ' + error.message,\n      false_positive_risk: 'UNKNOWN',\n      attack_campaign_assessment: 'UNKNOWN',\n      geopolitical_notes: 'Parse error',\n      final_recommendation: 'MANUAL_REVIEW',\n      agrees_with_agent1: null,\n      agrees_with_agent2: null,\n      disagreement_reason: 'AI analysis failed'\n    };\n  }\n\n  // Get TP/FP classification from Agent 2\n  const agent2Classification = combinedData.agent2_assessment.classification || 'FALSE_POSITIVE';\n  const agent2FPRisk = combinedData.agent2_assessment.false_positive_risk || oracleVerdict.false_positive_risk || 'MEDIUM';\n\n  // Build comprehensive final output\n  return [{\n    json: {\n      agent: 'ORACLE',\n      timestamp: new Date().toISOString(),\n\n      threat: {\n        ip: combinedData.ip,\n        port: combinedData.port,\n        attack_type: combinedData.attack_type\n      },\n\n      security_council_verdicts: {\n        agent1_triage: {\n          name: 'TRIAGE (DeepSeek)',\n          verdict: combinedData.agent1_assessment.verdict,\n          confidence: combinedData.agent1_assessment.confidence,\n          reasoning: combinedData.agent1_assessment.reason\n        },\n        agent2_hunter: {\n    name: 'HUNTER (DeepSeek)',\n    verdict: combinedData.agent2_assessment.verdict,\n    confidence: combinedData.agent2_assessment.confidence,\n    reasoning: combinedData.agent2_assessment.reasoning,\n    classification: agent2Classification,\n    false_positive_risk: agent2FPRisk,\n    threat_intel: combinedData.agent2_assessment.threat_intel\n  },\n\n        agent3_oracle: {\n          name: 'ORACLE (Gemini)',\n          verdict: oracleVerdict.verdict,\n          confidence: oracleVerdict.confidence,\n          reasoning: oracleVerdict.strategic_reasoning\n        }\n      },\n\n      oracle_strategic_analysis: {\n        verdict: oracleVerdict.verdict,\n        confidence: oracleVerdict.confidence,\n        strategic_reasoning: oracleVerdict.strategic_reasoning,\n        false_positive_risk: agent2FPRisk,\n        classification: agent2Classification,\n        attack_campaign_type: oracleVerdict.attack_campaign_assessment,\n        geopolitical_context: oracleVerdict.geopolitical_notes,\n        final_recommendation: oracleVerdict.final_recommendation\n      },\n\n      consensus_analysis: {\n        all_agents_agree: (\n          oracleVerdict.agrees_with_agent1 === true &&\n          oracleVerdict.agrees_with_agent2 === true\n        ),\n        agent1_agreement: oracleVerdict.agrees_with_agent1,\n        agent2_agreement: oracleVerdict.agrees_with_agent2,\n        disagreement_notes: oracleVerdict.disagreement_reason || 'All agents in consensus',\n\n        vote_summary: {\n          threat_votes: [\n            combinedData.agent1_assessment.verdict,\n            combinedData.agent2_assessment.verdict,\n            oracleVerdict.verdict\n          ].filter(v => v === 'THREAT' || v === 'URGENT').length,\n\n          benign_votes: [\n            combinedData.agent1_assessment.verdict,\n            combinedData.agent2_assessment.verdict,\n            oracleVerdict.verdict\n          ].filter(v => v === 'BENIGN' || v === 'ROUTINE').length,\n\n          suspicious_votes: [\n            combinedData.agent1_assessment.verdict,\n            combinedData.agent2_assessment.verdict,\n            oracleVerdict.verdict\n          ].filter(v => v === 'SUSPICIOUS' || v === 'INVESTIGATE').length\n        }\n      },\n\n      raw_gemini_response: geminiResponse\n    }\n  }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -480
+      ],
+      "id": "1a23448a-362d-4033-8e08-8e7f4096f2de",
+      "name": "Oracle Final Verdict1"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const agent2Data = $input.first().json;\n\n  return [{\n    json: {\n      ip: agent2Data.threat.ip,\n      port: agent2Data.threat.port,\n      attack_type: agent2Data.threat.attack_type,\n\n      agent1_assessment: {\n        agent_name: 'TRIAGE',\n        verdict: agent2Data.threat.deepseek_verdict || 'UNKNOWN',\n        reason: agent2Data.threat.deepseek_reason || 'No data from Agent 1',\n        risk_score: agent2Data.threat.risk_score,\n        priority: agent2Data.threat.priority,\n        confidence: agent2Data.threat.ai_confidence || 0\n      },\n\n      agent2_assessment: {\n        agent_name: 'HUNTER',\n        verdict: agent2Data.analysis.verdict,\n        confidence: agent2Data.analysis.confidence,\n        reasoning: agent2Data.analysis.reasoning,\n        severity: agent2Data.analysis.severity,\n        recommendation: agent2Data.analysis.recommendation,\n        classification: agent2Data.analysis.classification || 'FALSE_POSITIVE',\n        false_positive_risk: agent2Data.analysis.false_positive_risk || 'MEDIUM',\n        threat_intel: agent2Data.intelligence\n      }\n    }\n  }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        -480
+      ],
+      "id": "b4f90c3d-f9e6-4f4b-bd8e-3106d4e403ce",
+      "name": "Combine Both Agents1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Combine Both Agents1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gemini Strategic Prompt1": {
+      "main": [
+        [
+          {
+            "node": "Gemini API1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini API1": {
+      "main": [
+        [
+          {
+            "node": "Oracle Final Verdict1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Both Agents1": {
+      "main": [
+        [
+          {
+            "node": "Build Gemini Strategic Prompt1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3bc6ddd1-e163-42f8-a77d-22daa2f23002",
+  "meta": {
+    "instanceId": "b86198f84e0a58e402d0619da29cdfc8d7ec4f853fe9bf6a59da48d88847bb2e"
+  },
+  "id": "1yvWkixO0DZG0qBT",
+  "tags": []
+}
